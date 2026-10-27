@@ -14,6 +14,18 @@
 
 Stable Diffusion 3.5 Medium is Stability AI's 2.5B MMDiT image model: strong prompt following (three text encoders — CLIP-L, CLIP-G, and T5-XXL), good text rendering for its size, and a look of its own next to Kandinsky, Sana, and Z-Image. This is a plain app: run it, a page opens in your browser, type a prompt, pictures appear. Built in the same shape as Kandinsky UI, Sana UI, and Z-Image UI, free forever.
 
+![The app](ui-screenshot.png)
+
+*The app*
+
+![Example render — porcelain cyborg (CLIP-only load)](example-porcelain-cyborg.png)
+
+*Example render — porcelain cyborg (CLIP-only load)*
+
+![Example render — porcelain cyborg, full prompt (T5 full load)](example-circuit-cyborg.png)
+
+*Example render — porcelain cyborg, full prompt (T5 full load)*
+
 ## What it does
 
 - Text-to-image generation on your own GPU -- no cloud, no Stability account (a free Hugging Face account is needed for the gate, above)
