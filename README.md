@@ -1,4 +1,11 @@
 # SD 3.5 Medium UI
+![The app](ui-screenshot.png)
+
+The app
+
+![Example render — porcelain cyborg (CLIP-only load)](example-porcelain-cyborg.png)
+
+Example render — porcelain cyborg (CLIP-only load)
 
 ## Before you start
 
