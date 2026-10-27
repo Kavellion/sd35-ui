@@ -1,16 +1,23 @@
 @echo off
 REM SD 3.5 Medium UI one-click installer for Windows.
 REM
+REM Python is INCLUDED in this package, in the python_embeded folder,
+REM Python 3.12, ComfyUI portable style. There is nothing to install
+REM first, no venv is created, and no Python on your system is
+REM touched or needed -- if you have no Python at all, this still
+REM works.
+REM
 REM What it does:
-REM   1. Checks for Python 3.12 via the py launcher, py -3.12.
-REM   2. Creates a Python 3.12 virtual environment, .venv, in this folder.
-REM   3. Installs PyTorch with CUDA support from the cu130 index, then
-REM      the rest of the requirements, Diffusers 0.42, Gradio, ...
-REM   4. Creates images_out\ for finished pictures.
+REM   1. Bootstraps pip into the bundled Python, first run only,
+REM      using the bundled get-pip.py.
+REM   2. Installs PyTorch with CUDA support from the cu130 index,
+REM      then the rest of the requirements -- Diffusers 0.42,
+REM      Gradio, ... -- into python_embeded\Lib\site-packages.
+REM   3. Creates images_out\ for finished pictures.
 REM
 REM What it does NOT do:
-REM   - Touch your Python 3.10 install, or any other Python you have.
-REM     This app lives entirely in its own .venv, built from 3.12.
+REM   - Touch any Python you already have. This app lives entirely
+REM     in this folder and uses only the bundled Python 3.12.
 REM     Your other apps keep using whatever Python they already use.
 REM   - Download the SD 3.5 Medium weights. Diffusers downloads the
 REM     model from Hugging Face on the first Generate, about 6.5 GB
@@ -20,49 +27,47 @@ REM     into this folder.
 REM   - Accept the model's license for you, or make a token. SD 3.5
 REM     Medium is GATED under the Stability AI Community License:
 REM     YOU must accept that license on the model page AND paste a
-REM     Hugging Face read token into the app's token box before the
-REM     first Generate can succeed, see README.md, Before you start.
+REM     Hugging Face read token into the token box in the app
+REM     before the first Generate can succeed, see README.md,
+REM     Before you start.
 REM
-REM Requirements: Windows, Python 3.12, see below, an NVIDIA GPU,
-REM 12 GB is plenty -- the app defaults to the CLIP-only load plus
-REM CPU offload, which is what makes it fit, about 20 GB free disk
-REM for the first download plus room for pictures.
+REM Requirements: Windows, an NVIDIA GPU, 12 GB is plenty -- the
+REM app defaults to the CLIP-only load plus CPU offload, which is
+REM what makes it fit, about 20 GB free disk for the first
+REM download plus room for pictures.
 
 setlocal
 cd /d "%~dp0"
 
-py -3.12 --version >nul 2>&1
-if not errorlevel 1 goto HavePy312
+if exist python_embeded\python.exe goto HavePython
 echo.
-echo Python 3.12 was not found.
-echo.
-echo SD 3.5 UI needs Python 3.12, side by side with any other
-echo Python you already have. Install it from python.org --
-echo tick "Add python.exe to PATH" during setup -- then run
-echo this file again. Nothing about your existing Python
-echo installs is changed by this.
+echo The bundled Python in python_embeded is missing.
+echo Re-download or fully re-extract this package, then run
+echo this file again.
 echo.
 pause
 exit /b 1
 
-:HavePy312
-echo Python 3.12 found:
-py -3.12 --version
+:HavePython
+echo Bundled Python:
+python_embeded\python.exe --version
 
-if exist .venv goto HaveVenv
-echo Creating virtual environment from Python 3.12...
-py -3.12 -m venv .venv
-if not errorlevel 1 goto HaveVenv
-echo Failed to create the virtual environment.
+if exist python_embeded\Scripts\pip.exe goto HavePip
+echo Setting up pip for the bundled Python - first run only...
+python_embeded\python.exe python_embeded\get-pip.py --no-warn-script-location
+if not errorlevel 1 goto HavePip
+echo.
+echo Pip setup failed. Check your internet connection,
+echo then run this again.
+echo.
 pause
 exit /b 1
 
-:HaveVenv
-call .venv\Scripts\activate.bat
-python -m pip install --no-warn-script-location --upgrade pip
+:HavePip
+python_embeded\python.exe -m pip install --no-warn-script-location --upgrade pip
 
 echo Installing PyTorch with CUDA support - this is the big download...
-pip install --no-warn-script-location torch torchvision --index-url https://download.pytorch.org/whl/cu130
+python_embeded\python.exe -m pip install --no-warn-script-location torch torchvision --index-url https://download.pytorch.org/whl/cu130
 if not errorlevel 1 goto TorchOk
 echo.
 echo PyTorch install failed. Check your internet connection and
@@ -73,7 +78,7 @@ exit /b 1
 
 :TorchOk
 echo Installing the remaining packages...
-pip install --no-warn-script-location -r requirements.txt
+python_embeded\python.exe -m pip install --no-warn-script-location -r requirements.txt
 if not errorlevel 1 goto ReqOk
 echo.
 echo Package install failed. Run this again -- pip resumes

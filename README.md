@@ -1,11 +1,4 @@
 # SD 3.5 Medium UI
-![The app](ui-screenshot.png)
-
-The app
-
-![Example render — porcelain cyborg (CLIP-only load)](example-porcelain-cyborg.png)
-
-Example render — porcelain cyborg (CLIP-only load)
 
 ## Before you start
 
@@ -13,7 +6,7 @@ Example render — porcelain cyborg (CLIP-only load)
   1. Go to the model page (huggingface.co/stabilityai/stable-diffusion-3.5-medium), sign in, and **accept the Stability AI Community License** there.
   2. Create a Hugging Face **read token** (Hugging Face → Settings → Access Tokens), and **paste it into the token box in the app**. Same account for both steps.
   Without both, Hugging Face refuses the download and Generate reports that plainly. No way around it — that is Stability's gate, not a bug in this app.
-- A Windows PC with Python 3.12 installed first from python.org — tick "Add python.exe to PATH" during install. This app uses `py -3.12`, not 3.10.
+- A Windows PC. No Python install needed — Python 3.12 is included in this package, in the `python_embeded` folder, ComfyUI portable style. Any Python you already have is left alone and is not needed.
 - An NVIDIA graphics card (12 GB is plenty), about 20 GB free disk space, and an internet connection.
 - The first Generate downloads the model weights: about 6.5 GB on the default CLIP-only load (the T5 files are skipped), about 16 GB if you switch to T5 full.
 
@@ -43,7 +36,7 @@ No animation, no upscaling, no editing, no ControlNet, no inpainting, no img2img
 ## Requirements
 
 - Windows, an NVIDIA GPU (12 GB is plenty), and a recent driver
-- Python 3.12, with "Add python.exe to PATH" ticked. This is NOT optional and NOT the Python your other apps use: Diffusers 0.42 dropped Python 3.10, so this app needs 3.12. Install 3.12 side by side -- your Python 3.10 install is left completely alone, and this app lives entirely in its own `.venv` built from 3.12
+- Python 3.12 is bundled in the `python_embeded` folder: Diffusers 0.42 dropped Python 3.10, so this app runs on its own included 3.12 and nothing else. No Python install, no PATH changes, no venv — your other Pythons are left completely alone, and this app lives entirely in this folder
 - Disk space: about 20 GB free for the first download, plus room for pictures
 - System RAM: this is the honest part. Stability says SD 3.5 Medium needs 9.9 GB of VRAM *excluding* the text encoders, and with CPU offload the weights live in **system RAM** while one component at a time uses the GPU. T5-XXL alone is about 9.4 GB of weights, so the full three-encoder set is about 16 GB — on a machine with 16 GB of RAM total, T5 full will page hard or run out of memory; it is not the default for that reason. The default CLIP-only load is about 6.5 GB of weights and fits comfortably in 16 GB of RAM.
 - What you give up with CLIP only: the two CLIP encoders carry the prompt in 77-token windows and the pipeline feeds zeros where the T5 embeddings would go (a documented Diffusers SD3 pattern). Short and medium prompts work well; long, complex, multi-clause prompts follow noticeably less closely than with T5. If you have 32 GB of RAM, T5 full is the better load — switch the radio and the next Generate reloads.
@@ -51,8 +44,8 @@ No animation, no upscaling, no editing, no ControlNet, no inpainting, no img2img
 ## Install
 
 1. Do the two gate steps in "Before you start" (license acceptance + read token). Install works without them, but the first Generate will not.
-2. Install Python 3.12 from python.org (tick "Add python.exe to PATH"). If you already have another Python, this sits alongside it -- nothing existing is changed.
-3. Double-click `install.bat` and wait -- it builds a Python 3.12 virtual environment and installs PyTorch with CUDA plus the packages. Run it again if anything interrupts it; it resumes where it stopped.
+2. Extract the whole zip somewhere plain, like `C:\AI\sd35-ui` — the folder holding `install.bat` is the app folder.
+3. Double-click `install.bat` and wait -- it sets up pip inside the bundled Python, then installs PyTorch with CUDA plus the packages into it. Run it again if anything interrupts it; it resumes where it stopped.
 4. Double-click `run.bat`. A page opens in your browser. Paste your token, type a prompt, hit Generate.
 
 install.bat does NOT need re-running for code-only updates: if only app.py changed, just replace the file and run run.bat again.
