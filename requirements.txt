@@ -1,0 +1,51 @@
+# SD 3.5 Medium UI requirements
+#
+# torch is NOT listed here on purpose: install.bat installs it first
+# from PyTorch's cu130 CUDA index so GPU support works (same pattern
+# as the Kandinsky, Sana, Klein, and Z-Image apps). Everything below
+# installs from PyPI after that.
+#
+# PIN NOTE -- read before changing anything. Every version below is
+# pinned. diffusers 0.42.0 is pinned because that release contains
+# the StableDiffusion3Pipeline this app loads (verified against the
+# 0.42.0 wheel: StableDiffusion3Pipeline exists there, its
+# encode_prompt handles text_encoder_3=None by returning zero
+# embeddings, and max_sequence_length defaults to 256 there).
+# diffusers 0.42.0 needs huggingface-hub [1.32, 3.0); gradio 5.50.0
+# agrees on huggingface-hub 1.33.0 -- do NOT downgrade gradio to
+# 5.39.0, which needs huggingface-hub < 1.0 and pip refuses to
+# combine with diffusers 0.42.0. transformers 5.20.2 is from the
+# same verified set as the Z-Image app. sentencepiece is pinned
+# because the text-encoder tokenizer files may need it.
+#
+# No gguf pin here: this app never loads a .gguf file (the Z-Image
+# app needed gguf; this one loads the plain Diffusers pipeline).
+#
+# VERIFICATION, READ CAREFULLY. The set minus accelerate was
+# verified end-to-end with pip's resolver (dry run, Windows
+# 64-bit, Python 3.12): it resolves to exactly the versions
+# below. accelerate is pinned to 1.15.0 (also the Z-Image app's
+# verified version) and was verified separately from its wheel
+# metadata, NOT from the same dry run -- and here is why: a
+# full-set dry run launched from a Linux host CANNOT resolve any
+# torch-dependent package for a Windows target, because pip
+# evaluates torch's Linux-only nvidia-nccl markers against the
+# Linux host and reports a conflict. On Alan's real Windows
+# machine this artifact does not exist: install.bat installs
+# torch from the cu130 index FIRST, and accelerate 1.15.0 needs
+# only torch>=2.0.0, numpy, packaging, psutil, pyyaml,
+# huggingface-hub>=0.21.0, and safetensors>=0.4.3 -- all
+# satisfied by the cu130 torch step plus the pins below. Do not
+# "re-verify" this file with a Linux-host cross-platform dry run
+# and panic at the torch conflict; it is the dry run that is
+# broken, not this file.
+
+diffusers==0.42.0
+transformers==5.20.2
+accelerate==1.15.0
+safetensors==0.8.0
+gradio==5.50.0
+pillow==11.3.0
+huggingface_hub==1.33.0
+tokenizers==0.23.3
+sentencepiece==0.2.1
