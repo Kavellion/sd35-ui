@@ -3,8 +3,8 @@
 ## Before you start
 
 - **This model is GATED — two steps, both required, before the first Generate can succeed:**
-  1. Go to the model page (huggingface.co/stabilityai/stable-diffusion-3.5-medium), sign in, and **accept the Stability AI Community License** there.
-  2. Create a Hugging Face **read token** (Hugging Face → Settings → Access Tokens), and **paste it into the token box in the app**. Same account for both steps.
+  1. Go to the [SD 3.5 Medium model page](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium), sign in, and **accept the Stability AI Community License** there.
+  2. Create a Hugging Face **read token** on the [Access Tokens page](https://huggingface.co/settings/tokens), and **paste it into the token box in the app**. Same account for both steps.
   Without both, Hugging Face refuses the download and Generate reports that plainly. No way around it — that is Stability's gate, not a bug in this app.
 - A Windows PC. No Python install needed — Python 3.12 is included in this package, in the `python_embeded` folder, ComfyUI portable style. Any Python you already have is left alone and is not needed.
 - An NVIDIA graphics card (12 GB is plenty), about 20 GB free disk space, and an internet connection.
@@ -111,7 +111,7 @@ Notes and known limits of this build:
 
 ## Models and permissions
 
-The model belongs to Stability AI — see its Hugging Face page for terms. SD 3.5 Medium is under the **Stability AI Community License**: free for research, non-commercial, and commercial use for organizations under $1M in annual revenue; an enterprise license is required above that. Outputs are yours subject to that license's terms. **The model is NOT MIT or Apache, and this app does not change that.** Nothing is bundled here and nothing is sold. This UI (the Gradio app, the wrapper, the installer) is by Alan Carmack.
+The model belongs to Stability AI — see its [Hugging Face page](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium) for terms. SD 3.5 Medium is under the **Stability AI Community License**: free for research, non-commercial, and commercial use for organizations under $1M in annual revenue; an enterprise license is required above that. Outputs are yours subject to that license's terms. **The model is NOT MIT or Apache, and this app does not change that.** Nothing is bundled here and nothing is sold. This UI (the Gradio app, the wrapper, the installer) is by Alan Carmack.
 
 ## License
 
