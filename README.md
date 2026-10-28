@@ -26,6 +26,18 @@ Stable Diffusion 3.5 Medium is Stability AI's 2.5B MMDiT image model: strong pro
 
 *Example render — porcelain cyborg, full prompt (T5 full load)*
 
+![Example render — porcelain cyborg, dark metal (T5 full load)](example-dark-metal-cyborg.jpg)
+
+*Example render — porcelain cyborg, dark metal (T5 full load)*
+
+![Example render — porcelain cyborg with medallion (T5 full load)](example-medallion-cyborg.jpg)
+
+*Example render — porcelain cyborg with medallion (T5 full load)*
+
+![Example render — opal lucifer princess (T5 full load)](example-opal-flame-profile.jpg)
+
+*Example render — opal lucifer princess (T5 full load)*
+
 ## What it does
 
 - Text-to-image generation on your own GPU -- no cloud, no Stability account (a free Hugging Face account is needed for the gate, above)
