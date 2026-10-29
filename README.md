@@ -44,6 +44,7 @@ Stable Diffusion 3.5 Medium is Stability AI's 2.5B MMDiT image model: strong pro
 - Prompt + negative prompt, steps slider (default 40), guidance slider (default 4.5) — the model card's own snippet values
 - Text-encoder choice: **No T5 — CLIP only (the default, lighter)** or **T5 full (best prompt understanding, heaviest RAM)** — see Requirements for why the default is what it is
 - CPU offload toggle (default ON) — together with the CLIP-only default, that is what makes this fit a 12 GB card with 16 GB of RAM
+- Two LoRA slots with weight sliders (0.0–1.5, default 0.8) — SD 3.5 LoRA files (.safetensors) dropped in the `loras` folder are picked in the dropdowns; see **LoRAs** below
 - Hugging Face token box (password field — the token is used for the download and never written to settings.txt or anywhere else)
 - Size presets (Square 1024, Small square 768, Portrait 768x1024, Landscape 1024x768) plus custom width/height boxes, up to 2048
 - Up to 10 pictures per prompt, each with its own seed, saved as 000001.png, 000002.png, and so on
@@ -53,9 +54,23 @@ Stable Diffusion 3.5 Medium is Stability AI's 2.5B MMDiT image model: strong pro
 - A prompt queue (one prompt per line -- when it has lines, Generate runs the queue instead of the single prompt box, all lines sharing the one batch folder, frames numbered continuously)
 - Dynamic prompts: {a|b|c} groups, one random pick per group, re-expanded for every single image (prompt and negative prompt). settings.txt records the expanded prompt actually used
 - An Unload models button to free VRAM and RAM, and memory freed between every image in a run (long queues keep working)
-- Every run adds its pictures to the batch folder and appends a block to `settings.txt` next to them (date, time, frame range, settings including T5 mode and offload, prompt, negative prompt, expanded prompts, seeds)
+- Every run adds its pictures to the batch folder and appends a block to `settings.txt` next to them (date, time, frame range, settings including T5 mode, offload and LoRA state, prompt, negative prompt, expanded prompts, seeds)
 
 No animation, no upscaling, no editing, no ControlNet, no inpainting, no img2img -- v1 is text-to-image only, kept simple on purpose.
+
+## LoRAs
+
+Two slots, each with a weight slider (0.0 to 1.5, default 0.8 — 0.8 to 1.0 is the usual working range; lower is subtler, higher is stronger and can start to fight the prompt).
+
+1. Drop `.safetensors` LoRA files into the `loras` folder. It sits **next to app.py, inside the `sd35-ui` subfolder** of the app folder (the folder that holds `run.bat` has an `sd35-ui` folder inside it; `app.py` and `loras` are in there).
+2. Pick a file in the **LoRA 1** / **LoRA 2** dropdowns — hit **Refresh list** after adding a file while the app is running — set the weights, and Generate. `None` in a slot means no LoRA in that slot.
+3. Each run's `settings.txt` block records what was applied, e.g. `loras: my-style.safetensors @ 0.8`. Switching the picks between runs unloads the old adapters first, so a LoRA never leaks from one run into the next.
+
+**Only SD 3.5 LoRAs fit.** SDXL and SD 1.5 LoRAs are built for different models and do not work here — a file that is not a LoRA checkpoint at all is refused by the loader with a plain status message, and a wrong-model LoRA is not a sensible render waiting to happen. SD 3.5 LoRAs may carry transformer weights, CLIP text-encoder weights, or both; whichever parts a file has are the parts that get applied. The slots work the same in both text-encoder modes: a LoRA's text-encoder parts land on the two CLIP encoders, and T5 itself never takes a LoRA (Diffusers' SD3 loader has no T5 LoRA path), so the default CLIP-only load is no obstacle.
+
+**Format matters (honest limit, Oct 29, 2026).** The slots load **Diffusers-format** LoRAs — files whose weights are keyed `transformer.` / `text_encoder.` / `text_encoder_2.`, typically named `pytorch_lora_weights.safetensors` (DreamBooth/Diffusers exports). **Kohya / sd-scripts format files do NOT load yet**: those are keyed `lora_unet_joint_blocks_...`, the Diffusers SD3 loader performs no conversion for them, and the app refuses them with a plain status message instead of rendering. Most SD 3.5 LoRAs on Civitai are Kohya format, so check the file before downloading; a converter is planned for a later update.
+
+**PC-proven Oct 29, 2026** (author's machine, RTX 4070 12 GB / 16 GB RAM): a Diffusers-format LoRA in slot 1 at 0.8 vs the same prompt and seed with the slot on None produced clearly different pictures, and `settings.txt` recorded the applied LoRA.
 
 ## Requirements
 
@@ -80,7 +95,7 @@ install.bat does NOT need re-running for code-only updates: if only app.py chang
 2. The first run downloads the model (about 6.5 GB on this load), so it takes a while -- that is the one-time download, not a stuck render.
 3. If the status says the load could not happen and mentions the gate, the token or the license acceptance is the problem, in that order: check the token is a READ token from the same Hugging Face account that accepted the license.
 4. When the default test works, try T5 full *if your machine has the RAM for it* (see Requirements) — expect a much bigger download (~16 GB total) and a slower load, in exchange for better long-prompt following.
-5. If a run fails with an out-of-memory error on a 16 GB RAM machine, you are almost certainly on T5 full or offload off — go back to CLIP-only with offload ON; that combination is the proven-shape default for this class of machine (real-machine proof for this specific build is the author's first install — see Code verification).
+5. If a run fails with an out-of-memory error on a 16 GB RAM machine, you are almost certainly on T5 full or offload off — go back to CLIP-only with offload ON; that combination is the default for this class of machine and was PC-proven on the author's own 16 GB machine on Oct 27, 2026 — see Code verification.
 
 ## Where pictures go
 
@@ -94,11 +109,12 @@ Diffusers 0.42.0, StableDiffusion3Pipeline:
 2. With offload ON (the default), `enable_model_cpu_offload()` keeps the components in RAM and moves one at a time to the GPU. With offload OFF, everything goes to GPU with `.to("cuda")` -- only for cards with much more than 12 GB of VRAM.
 3. The pipeline call is `pipe(prompt, negative_prompt, height, width, num_inference_steps=<steps slider>, guidance_scale=<guidance slider>, max_sequence_length=256, generator)` with one CPU generator per image (seeded from the seed box), following the model card's own snippet (which uses 40 steps and guidance 4.5). The CPU generator is deliberate: it works identically with offload on or off.
 4. `max_sequence_length=256` is the pipeline's own default, and the plain model-card snippet's implicit value. A community quant example uses 512; that was not copied, because the pipeline builds a (batch, sequence, joint-attention-dim) embedding at that length — even with T5 off — so 512 costs memory on every image for a benefit only very long T5 prompts would see.
+5. LoRAs load through the pipeline's own adapter API: each picked file loads once per Generate click with `load_lora_weights(<loras folder>, weight_name=<file>, adapter_name="lora<i>")`, then one `set_adapters(names, adapter_weights=weights)` applies both slots' weights; changing the picks unloads first with `unload_lora_weights()`. Verified against the diffusers 0.42.0 wheel: `SD3LoraLoaderMixin._lora_loadable_modules` is exactly `["transformer", "text_encoder", "text_encoder_2"]`, a component with no weights in the file is skipped with a warning (never an error), and the API is PEFT-backed — that is why `peft` is pinned in requirements.txt.
 
 Notes and known limits of this build:
 
 - The gate is real: no token, or a token from an account that has not accepted the license, means no download. The app surfaces that as a plain status message with the two things to check.
-- On 16 GB of RAM, treat T5 full as experimental: it may work slowly through the pagefile rather than failing outright. That uncertainty is honest — the author's machine class is exactly 16 GB, and the real answer comes from the first install test, not from this build machine.
+- On 16 GB of RAM, T5 full is the heaviest mode — but it was PC-proven on the author's own 16 GB machine on Oct 27, 2026 (CPU offload on): a 100-step portrait rendered in about 50 seconds with no out-of-memory error, and an unattended queue ran to completion. CLIP-only stays the default because it is lighter and faster to load, not because T5 full fails.
 - Nothing about the model is bundled here; weights download from Stability's repo under their license (below).
 
 ## Code verification (no GPU in the build environment)
@@ -107,7 +123,8 @@ Notes and known limits of this build:
 - The pipeline class and the No-T5 pattern were verified against the diffusers 0.42.0 wheel itself (not just docs): `StableDiffusion3Pipeline` exists, `text_encoder_3=None` is an explicitly handled path, and `max_sequence_length` defaults to 256 with a hard cap of 512.
 - The requirements set (minus accelerate — see the note at the top of requirements.txt for why) was verified end-to-end with pip's resolver for Windows / Python 3.12, resolving to exactly the pinned versions; accelerate 1.15.0 was verified separately from its wheel metadata.
 - The loader and generation paths are stub-tested with fake pipeline modules: CLIP-only vs T5-full arguments to from_pretrained, token passing (and its absence when the box is empty), offload on/off, load-failure message, steps/guidance/max-sequence pass-through, seed resolution, dynamic expansion, batch-folder/settings logic (continuous 6-digit frames, appended settings blocks, T5 mode recorded), queue-over-prompt, history, star, and the early-exit paths. The stub test is not shipped in the zip.
-- What is NOT verified here: the real install on Windows, the real gated download, and the first picture on a 12 GB / 16 GB machine. Those are proven by the author's install, not by this build machine — same boundary as the other apps.
+- The LoRA slots (added Oct 28, 2026) are stub-tested the same way, with the fake pipeline's adapter methods mirroring the real 0.42.0 validation read from the wheel: the all-keys-must-contain-'lora' checkpoint check, the duplicate-adapter-name refusal, and set_adapters' missing-adapter refusal, each with the wheel's exact error text as negative controls. Covered: picker population from `loras/`, adapter mapping in both encoder modes, two adapters with separate weights, transformer-only files, switching picks between runs with no adapter leak, unload on None, and the LoRA line in settings.txt. peft 0.21.2 was verified from its wheel metadata against this requirements set (see the note in requirements.txt for why the Linux-host dry run cannot cover it). The app's exact LoRA call shapes were ALSO run against the real pinned stack (diffusers 0.42.0 + transformers 5.20.2 + peft 0.21.2 on CPU torch, a pipeline assembled from tiny random-init components with `text_encoder_3=None`, i.e. the CLIP-only shape): one adapter and two adapters load and set with their weights, the duplicate-name and missing-adapter refusals match the stub's error texts word for word, a non-LoRA checkpoint is refused, and unload empties the registry.
+- PC status (author's machine, RTX 4070 12 GB / 16 GB RAM): the base app was proven Oct 27, 2026 — real install, gated download, first pictures in both CLIP-only and T5-full modes, and an unattended queue that ran to completion. The LoRA slots were proven Oct 29, 2026 with a real Diffusers-format SD 3.5 LoRA (see **LoRAs** above). Kohya-format LoRAs remain unproven-by-design: they do not load until a converter ships.
 
 ## Models and permissions
 

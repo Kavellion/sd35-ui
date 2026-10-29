@@ -72,9 +72,11 @@ several pictures per prompt, seed shown in the status line, a
 Stop button, a Random prompt button (word banks in code), a
 session-only prompt history dropdown, Star batch (copies a batch
 into images_out/favorites/), a prompt queue (one prompt per
-line), single-level dynamic prompts {a|b|c}, and an Unload
-button to free VRAM/RAM. Memory is freed between every image
-in a run (the Z-Image batch lesson).
+line), single-level dynamic prompts {a|b|c}, two LoRA slots
+(SD 3.5 LoRA .safetensors files in loras/ next to this file,
+each with a weight slider), and an Unload button to free
+VRAM/RAM. Memory is freed between every image in a run (the
+Z-Image batch lesson).
 
 No img2img, no inpainting, no ControlNet, no blending, no
 upscaling, no animation -- v1 is text-to-image only, kept simple
@@ -92,6 +94,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(APP_DIR)  # folder holding run.bat
 IMAGES_DIR = os.path.join(ROOT_DIR, "images_out")
 FAVORITES_DIR = os.path.join(IMAGES_DIR, "favorites")
+LORAS_DIR = os.path.join(APP_DIR, "loras")
 
 MODEL_ID = "stabilityai/stable-diffusion-3.5-medium"
 
@@ -109,6 +112,7 @@ DEFAULT_PROMPT = (
 _pipe = None
 _pipe_key = None  # (t5_mode, offload, has_token) of the loaded pipe
 _pipe_note = ""
+_lora_key = None  # tuple of (filename, weight) currently applied
 
 
 def _safe_batch_name(name):
@@ -257,11 +261,13 @@ def _free_memory():
 
 def _unload_pipe():
     """Drop the loaded pipeline so the next Generate loads fresh
-    (used when T5 mode/offload/token change, and by Unload)."""
-    global _pipe, _pipe_key, _pipe_note
+    (used when T5 mode/offload/token change, and by Unload). The
+    LoRA state goes with it: a fresh pipe has no adapters."""
+    global _pipe, _pipe_key, _pipe_note, _lora_key
     _pipe = None
     _pipe_key = None
     _pipe_note = ""
+    _lora_key = None
     _free_memory()
 
 
@@ -328,6 +334,101 @@ def _load_pipe(t5_mode, offload, token):
     _pipe_key = key
     _pipe_note = note
     return pipe, note
+
+
+# ------------------------------------------------------------------
+# LoRA -- two slots, same shape as the SDXL app. Adapters are
+# reconciled once per Generate click, before the first job runs.
+# ------------------------------------------------------------------
+
+def _list_loras():
+    """The LoRA dropdown choices: 'None', then every .safetensors
+    file in loras/ (next to app.py), sorted."""
+    found = []
+    if os.path.isdir(LORAS_DIR):
+        for name in sorted(os.listdir(LORAS_DIR)):
+            if name.lower().endswith(".safetensors"):
+                found.append(name)
+    return ["None"] + found
+
+
+def _lora_state_text(lora_key):
+    """settings.txt wording for the applied LoRA state."""
+    if not lora_key:
+        return "none"
+    return ", ".join("{} @ {}".format(name, weight)
+                     for name, weight in lora_key)
+
+
+def _reconcile_loras(pipe, slot1, weight1, slot2, weight2):
+    """Make the pipe's loaded LoRA adapters match the two UI
+    slots. Loads or unloads only when the desired state actually
+    changed, so switching the selection between runs never leaks
+    the previous run's adapters (a second load under the same
+    adapter name is exactly what Diffusers refuses). Returns the
+    state text for settings.txt. Raises RuntimeError with a
+    plain sentence when a LoRA file fails to load.
+
+    Uses the Diffusers 0.42 SD3 adapter API, verified against
+    the pinned wheel: load each file once with
+    load_lora_weights(loras_dir, weight_name=file,
+    adapter_name="lora<i>"), then set_adapters(names,
+    adapter_weights=weights) once. An SD 3.5 LoRA may carry
+    transformer weights and/or CLIP text-encoder weights
+    (text_encoder = CLIP-L, text_encoder_2 = CLIP-G); the loader
+    applies whichever parts the file actually has and quietly
+    skips the rest, in both encoder modes. The T5 encoder is
+    never a LoRA target -- SD3's loadable modules are exactly
+    transformer / text_encoder / text_encoder_2 -- so CLIP-only
+    mode (text_encoder_3=None) is no obstacle, and a file's T5
+    weights, if it has any, are simply not used."""
+    global _lora_key
+    desired = []
+    for filename, weight in ((slot1, weight1), (slot2, weight2)):
+        if filename and filename != "None":
+            desired.append((filename, float(weight)))
+    desired_key = tuple(desired)
+    if desired_key == _lora_key:
+        return _lora_state_text(_lora_key)
+    try:
+        if _lora_key:
+            pipe.unload_lora_weights()
+        names = []
+        weights = []
+        for index, (filename, weight) in enumerate(desired):
+            adapter = "lora{}".format(index)
+            pipe.load_lora_weights(
+                LORAS_DIR, weight_name=filename, adapter_name=adapter)
+            names.append(adapter)
+            weights.append(weight)
+        if names:
+            pipe.set_adapters(names, adapter_weights=weights)
+    except Exception as exc:  # noqa: BLE001 -- plain status text
+        # Best-effort cleanup: if the second file failed after
+        # the first one loaded, no half-applied adapter set may
+        # survive into the next run.
+        try:
+            pipe.unload_lora_weights()
+        except Exception:  # noqa: BLE001 -- cleanup must not mask
+            pass
+        _lora_key = None
+        raise RuntimeError(
+            "Could not load a LoRA ({}). Check the file is an "
+            "SD 3.5 LoRA in the loras folder (next to app.py), "
+            "then try again.".format(exc))
+    _lora_key = desired_key
+    return _lora_state_text(_lora_key)
+
+
+def _refresh_loras(current1, current2):
+    """Refresh-button update for the two LoRA dropdowns: rescan
+    loras/, keeping each current pick when it still exists."""
+    import gradio as gr
+    choices = _list_loras()
+    value1 = current1 if current1 in choices else "None"
+    value2 = current2 if current2 in choices else "None"
+    return (gr.update(choices=choices, value=value1),
+            gr.update(choices=choices, value=value2))
 
 
 def _history_add(history, prompt):
@@ -408,6 +509,7 @@ def random_prompt():
 def generate(prompt_text, negative_text, queue_text, batch_name,
              width, height, seed, count, steps, guidance,
              t5_choice, offload, token,
+             lora1, lora1_weight, lora2, lora2_weight,
              last_folder, history):
     """Text-to-image generation. A generator function: it yields
     (gallery images, status, history dropdown update, last batch
@@ -420,7 +522,8 @@ def generate(prompt_text, negative_text, queue_text, batch_name,
     re-expanded for every single image (prompt and negative), so
     no two images in a run share an expansion by accident. All
     jobs in one click share one batch folder, frames numbered
-    continuously."""
+    continuously. The LoRA slots are reconciled once per click,
+    before the first job, and recorded in settings.txt."""
     import torch
 
     count = int(count) if count else 1
@@ -466,6 +569,13 @@ def generate(prompt_text, negative_text, queue_text, batch_name,
 
     try:
         pipe, note = _load_pipe(t5_mode, bool(offload), token)
+    except RuntimeError as exc:
+        yield from _early(str(exc), last_folder, history)
+        return
+
+    try:
+        lora_text = _reconcile_loras(
+            pipe, lora1, lora1_weight, lora2, lora2_weight)
     except RuntimeError as exc:
         yield from _early(str(exc), last_folder, history)
         return
@@ -525,6 +635,7 @@ def generate(prompt_text, negative_text, queue_text, batch_name,
             "steps: {}".format(steps),
             "guidance: {}".format(guidance),
             "max_sequence_length: {}".format(MAX_SEQUENCE_LENGTH),
+            "loras: {}".format(lora_text),
             "prompt: {}".format(template),
             "negative_prompt: {}".format(negative_template),
             _seed_entry(seeds),
@@ -577,7 +688,8 @@ def build_ui():
             "Default load is CLIP-only (no T5) with CPU offload "
             "on: that is the load that fits a 16 GB RAM machine. "
             "T5 full understands longer prompts better and is "
-            "one click away.")
+            "one click away. The LoRA slots take SD 3.5 LoRA "
+            "files from the loras folder next to app.py.")
         with gr.Row():
             prompt_box = gr.Textbox(
                 label="Prompt", value=DEFAULT_PROMPT, lines=3)
@@ -611,6 +723,18 @@ def build_ui():
             count_box = gr.Slider(label="Images per prompt",
                                   minimum=1, maximum=10, value=1,
                                   step=1)
+        with gr.Row():
+            lora1_dd = gr.Dropdown(
+                label="LoRA 1 (.safetensors in the loras folder)",
+                choices=_list_loras(), value="None")
+            lora1_w = gr.Slider(label="Weight 1", minimum=0.0,
+                                maximum=1.5, value=0.8, step=0.05)
+            lora2_dd = gr.Dropdown(
+                label="LoRA 2", choices=_list_loras(),
+                value="None")
+            lora2_w = gr.Slider(label="Weight 2", minimum=0.0,
+                                maximum=1.5, value=0.8, step=0.05)
+            lora_refresh_btn = gr.Button("Refresh list")
         with gr.Row():
             t5_box = gr.Radio(
                 label="Text encoders",
@@ -651,6 +775,9 @@ def build_ui():
 
         preset.change(fn=_preset_size, inputs=preset,
                       outputs=[width_box, height_box])
+        lora_refresh_btn.click(
+            fn=_refresh_loras, inputs=[lora1_dd, lora2_dd],
+            outputs=[lora1_dd, lora2_dd])
         random_btn.click(fn=random_prompt, outputs=prompt_box)
         history_dd.change(fn=lambda choice: choice,
                           inputs=history_dd, outputs=prompt_box)
@@ -659,7 +786,8 @@ def build_ui():
             inputs=[prompt_box, negative_box, queue_box, batch_box,
                     width_box, height_box, seed_box, count_box,
                     steps_box, guidance_box, t5_box, offload_box,
-                    token_box, last_folder_state, history_state],
+                    token_box, lora1_dd, lora1_w, lora2_dd, lora2_w,
+                    last_folder_state, history_state],
             outputs=[gallery, status_box, history_dd,
                      last_folder_state, history_state])
         stop_btn.click(fn=_noop, cancels=[generate_event])

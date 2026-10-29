@@ -49,3 +49,22 @@ pillow==11.3.0
 huggingface_hub==1.33.0
 tokenizers==0.23.3
 sentencepiece==0.2.1
+
+# peft is pinned for the LoRA slots (added Oct 28, 2026).
+# Diffusers' LoRA adapter API is PEFT-backed: in the 0.42.0
+# wheel, SD3LoraLoaderMixin.load_lora_weights is decorated
+# @require_peft_backend and unload_lora_weights / set_adapters
+# raise without it, so without peft the slots cannot load
+# anything. diffusers 0.42.0's own floor is peft>=0.17.0.
+# peft 0.21.2 was verified from its wheel metadata: it needs
+# torch>=1.13.0 (satisfied by install.bat's cu130 torch step),
+# transformers (unpinned), accelerate>=0.21.0 (1.15.0 here),
+# huggingface-hub>=0.25.0 (1.33.0 here), safetensors (0.8.0
+# here), and numpy / packaging / psutil / pyyaml / tqdm, which
+# arrive with accelerate and transformers. It was NOT put
+# through the full-set Linux-host dry run for the same reason
+# accelerate was not (see the top of this file): peft
+# hard-depends on torch, so the Linux host evaluates torch's
+# Linux-only nvidia-nccl markers against itself and reports a
+# conflict that does not exist on Windows.
+peft==0.21.2
