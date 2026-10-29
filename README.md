@@ -72,6 +72,16 @@ Two slots, each with a weight slider (0.0 to 1.5, default 0.8 — 0.8 to 1.0 is 
 
 **PC-proven Oct 29, 2026** (author's machine, RTX 4070 12 GB / 16 GB RAM): a Diffusers-format LoRA in slot 1 at 0.8 vs the same prompt and seed with the slot on None produced clearly different pictures, and `settings.txt` recorded the applied LoRA.
 
+## Saved setups
+
+One compact row under the LoRA row saves a whole recipe under a name: set the controls the way you want them, type a name in the **Setup name** box, and click **Save setup**. Later, pick that name in the **Saved setups** dropdown and click **Load setup** — every captured control is restored in one click. **Delete setup** removes the picked setup. Saving over an existing name replaces it.
+
+A setup captures: prompt, negative prompt, steps, guidance, size (preset plus custom width/height), seed, text-encoder mode, CPU offload, batch name, and both LoRA picks with their weights.
+
+Setups persist in `setups.json` next to `app.py` (the app creates it on the first save) and survive restarts; replacing `app.py` for a code-only update does not touch it. The Hugging Face token is deliberately **NOT** saved — it is not part of a setup and is never written to `setups.json`.
+
+**PC-proven Oct 29, 2026** (author's machine, RTX 4070 12 GB / 16 GB RAM): a setup was saved as "test1", the settings were scrambled, and one click on Load setup restored the whole recipe.
+
 ## Requirements
 
 - Windows, an NVIDIA GPU (12 GB is plenty), and a recent driver

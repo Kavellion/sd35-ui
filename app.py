@@ -74,9 +74,12 @@ session-only prompt history dropdown, Star batch (copies a batch
 into images_out/favorites/), a prompt queue (one prompt per
 line), single-level dynamic prompts {a|b|c}, two LoRA slots
 (SD 3.5 LoRA .safetensors files in loras/ next to this file,
-each with a weight slider), and an Unload button to free
-VRAM/RAM. Memory is freed between every image in a run (the
-Z-Image batch lesson).
+each with a weight slider), saved setups (a named recipe --
+prompt, negative, steps, guidance, size, seed, encoder mode,
+offload, batch name, LoRA picks -- kept in setups.json next to
+this file and loaded back into every control in one click),
+and an Unload button to free VRAM/RAM. Memory is freed
+between every image in a run (the Z-Image batch lesson).
 
 No img2img, no inpainting, no ControlNet, no blending, no
 upscaling, no animation -- v1 is text-to-image only, kept simple
@@ -84,6 +87,7 @@ on purpose.
 """
 
 import gc
+import json
 import os
 import random
 import re
@@ -95,6 +99,7 @@ ROOT_DIR = os.path.dirname(APP_DIR)  # folder holding run.bat
 IMAGES_DIR = os.path.join(ROOT_DIR, "images_out")
 FAVORITES_DIR = os.path.join(IMAGES_DIR, "favorites")
 LORAS_DIR = os.path.join(APP_DIR, "loras")
+SETUPS_FILE = os.path.join(APP_DIR, "setups.json")
 
 MODEL_ID = "stabilityai/stable-diffusion-3.5-medium"
 
@@ -431,6 +436,219 @@ def _refresh_loras(current1, current2):
             gr.update(choices=choices, value=value2))
 
 
+# ------------------------------------------------------------------
+# Saved setups -- one named recipe in setups.json next to app.py:
+# prompt, negative prompt, steps, guidance, size preset + custom
+# width/height, seed, text-encoder mode, CPU offload, batch name,
+# and both LoRA picks with their weights. One click loads the
+# whole recipe back into the controls. NOT part of a setup: the
+# token (never written to any file in this app), the prompt
+# queue, and Images per prompt -- those are per-run choices, not
+# recipe. A missing or corrupt setups.json simply means "no
+# setups yet"; it never stops the app.
+# ------------------------------------------------------------------
+
+_T5_LABELS = (
+    "No T5 -- CLIP only (lighter, recommended for 16 GB RAM)",
+    "T5 full (best prompt understanding, heaviest RAM)",
+)
+
+_PRESET_LABELS = (
+    "Square 1024x1024", "Small square 768x768",
+    "Portrait 768x1024", "Landscape 1024x768", "Custom",
+)
+
+# Fallbacks for a setup that is missing a field (a hand-edited
+# setups.json, or one written by an older build): each default
+# matches the control's own starting value in build_ui().
+_SETUP_DEFAULTS = {
+    "prompt": "",
+    "negative": "",
+    "steps": DEFAULT_STEPS,
+    "guidance": DEFAULT_GUIDANCE,
+    "preset": "Square 1024x1024",
+    "width": 1024,
+    "height": 1024,
+    "seed": -1,
+    "t5_choice": _T5_LABELS[0],
+    "offload": True,
+    "batch": "sd35-pictures",
+    "lora1": "None",
+    "lora1_weight": 0.8,
+    "lora2": "None",
+    "lora2_weight": 0.8,
+}
+
+
+def _load_setups():
+    """All saved setups, as a {name: recipe} dict. A missing
+    setups.json, an unreadable or corrupt file, or JSON that is
+    not an object all mean "no setups yet": an empty dict,
+    never an exception. Entries whose value is not an object
+    are skipped."""
+    try:
+        with open(SETUPS_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(name): recipe for name, recipe in data.items()
+            if isinstance(recipe, dict)}
+
+
+def _write_setups(setups):
+    """Write the setups dict to setups.json (sorted keys and a
+    trailing newline, so the file stays readable by hand).
+    Raises OSError when the write fails; the Save/Delete
+    handlers turn that into a plain status line."""
+    with open(SETUPS_FILE, "w", encoding="utf-8") as handle:
+        json.dump(setups, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def _setup_choices():
+    """The saved-setups dropdown choices: the setup names,
+    sorted."""
+    return sorted(_load_setups())
+
+
+def _save_setup(name, prompt, negative, steps, guidance, preset,
+                width, height, seed, t5_choice, offload, batch,
+                lora1, lora1_weight, lora2, lora2_weight):
+    """Save the current controls as a named setup in
+    setups.json. Returns (status, setups dropdown update).
+    An empty name is refused with a plain status and nothing
+    is written. Saving over an existing name replaces that
+    setup, and the status says so."""
+    import gradio as gr
+    name = (name or "").strip()
+    if not name:
+        return ("Type a name in the setup name box first -- "
+                "nothing was saved.", gr.update())
+    setups = _load_setups()
+    replaced = name in setups
+    setups[name] = {
+        "prompt": prompt or "",
+        "negative": negative or "",
+        "steps": steps,
+        "guidance": guidance,
+        "preset": preset,
+        "width": width,
+        "height": height,
+        "seed": seed,
+        "t5_choice": t5_choice,
+        "offload": bool(offload),
+        "batch": batch or "",
+        "lora1": lora1 or "None",
+        "lora1_weight": lora1_weight,
+        "lora2": lora2 or "None",
+        "lora2_weight": lora2_weight,
+    }
+    try:
+        _write_setups(setups)
+    except OSError as exc:  # noqa: BLE001 -- plain status text
+        return ("Could not save setup '{}': {}".format(name, exc),
+                gr.update())
+    if replaced:
+        message = ("Setup '{}' saved -- it replaced the old "
+                   "setup with that name.".format(name))
+    else:
+        message = "Setup '{}' saved.".format(name)
+    return message, gr.update(choices=sorted(setups), value=name)
+
+
+def _setup_load_fallback(message):
+    """A load that cannot run: all fifteen recipe controls left
+    untouched (empty updates), the reason as the status line."""
+    import gradio as gr
+    return tuple(gr.update() for _ in range(15)) + (message,)
+
+
+def _load_setup(name):
+    """Load one saved setup into every recipe control. Returns
+    one update per control -- prompt, negative, steps,
+    guidance, preset, width, height, seed, text encoders,
+    offload, batch, LoRA 1, weight 1, LoRA 2, weight 2 -- plus
+    a status line. Fields a setup does not have fall back to
+    _SETUP_DEFAULTS, and a preset or encoder choice the app no
+    longer offers falls back the same way. A saved LoRA file
+    that is no longer in loras/ falls back to None for that
+    slot and is named in the status -- never an error. The two
+    LoRA updates also carry a fresh loras/ scan as their
+    choices, so a file added since the app started is picked
+    up here even without the Refresh list button."""
+    import gradio as gr
+    name = (name or "").strip()
+    if not name:
+        return _setup_load_fallback(
+            "Pick a saved setup to load first.")
+    setups = _load_setups()
+    if name not in setups:
+        return _setup_load_fallback(
+            "No setup named '{}' is saved.".format(name))
+    recipe = dict(_SETUP_DEFAULTS)
+    recipe.update(setups[name])
+    if recipe["preset"] not in _PRESET_LABELS:
+        recipe["preset"] = _SETUP_DEFAULTS["preset"]
+    if recipe["t5_choice"] not in _T5_LABELS:
+        recipe["t5_choice"] = _SETUP_DEFAULTS["t5_choice"]
+    available = _list_loras()
+    missing = []
+    for slot in ("lora1", "lora2"):
+        pick = recipe[slot]
+        if pick and pick != "None" and pick not in available:
+            missing.append(pick)
+            recipe[slot] = "None"
+    message = "Setup '{}' loaded.".format(name)
+    if len(missing) == 1:
+        message += (" Note: '{}' is no longer in the loras "
+                    "folder, so that slot was set to None."
+                    .format(missing[0]))
+    elif missing:
+        message += (" Note: {} are no longer in the loras "
+                    "folder, so those slots were set to None."
+                    .format(" and ".join(
+                        "'{}'".format(item) for item in missing)))
+    return (
+        gr.update(value=recipe["prompt"]),
+        gr.update(value=recipe["negative"]),
+        gr.update(value=recipe["steps"]),
+        gr.update(value=recipe["guidance"]),
+        gr.update(value=recipe["preset"]),
+        gr.update(value=recipe["width"]),
+        gr.update(value=recipe["height"]),
+        gr.update(value=recipe["seed"]),
+        gr.update(value=recipe["t5_choice"]),
+        gr.update(value=bool(recipe["offload"])),
+        gr.update(value=recipe["batch"]),
+        gr.update(choices=available, value=recipe["lora1"]),
+        gr.update(value=recipe["lora1_weight"]),
+        gr.update(choices=available, value=recipe["lora2"]),
+        gr.update(value=recipe["lora2_weight"]),
+        message,
+    )
+
+
+def _delete_setup(name):
+    """Delete one saved setup from setups.json. Returns
+    (status, setups dropdown update). No pick, or a name that
+    is not saved, is a plain status and nothing is written."""
+    import gradio as gr
+    name = (name or "").strip()
+    setups = _load_setups()
+    if not name or name not in setups:
+        return ("Pick a saved setup to delete first.", gr.update())
+    del setups[name]
+    try:
+        _write_setups(setups)
+    except OSError as exc:  # noqa: BLE001 -- plain status text
+        return ("Could not delete setup '{}': {}".format(
+            name, exc), gr.update())
+    return ("Setup '{}' deleted.".format(name),
+            gr.update(choices=sorted(setups), value=None))
+
+
 def _history_add(history, prompt):
     """Add a prompt to the session history (most recent last, no
     duplicates, last 10 kept). Returns the new history list."""
@@ -689,7 +907,9 @@ def build_ui():
             "on: that is the load that fits a 16 GB RAM machine. "
             "T5 full understands longer prompts better and is "
             "one click away. The LoRA slots take SD 3.5 LoRA "
-            "files from the loras folder next to app.py.")
+            "files from the loras folder next to app.py. "
+            "Saved setups store a whole recipe under a name "
+            "in setups.json, one click to load back.")
         with gr.Row():
             prompt_box = gr.Textbox(
                 label="Prompt", value=DEFAULT_PROMPT, lines=3)
@@ -736,6 +956,15 @@ def build_ui():
                                 maximum=1.5, value=0.8, step=0.05)
             lora_refresh_btn = gr.Button("Refresh list")
         with gr.Row():
+            setup_name_box = gr.Textbox(
+                label="Setup name", lines=1)
+            setup_save_btn = gr.Button("Save setup")
+            setup_dd = gr.Dropdown(
+                label="Saved setups (setups.json, next to app.py)",
+                choices=_setup_choices(), value=None)
+            setup_load_btn = gr.Button("Load setup")
+            setup_delete_btn = gr.Button("Delete setup")
+        with gr.Row():
             t5_box = gr.Radio(
                 label="Text encoders",
                 choices=[
@@ -778,6 +1007,24 @@ def build_ui():
         lora_refresh_btn.click(
             fn=_refresh_loras, inputs=[lora1_dd, lora2_dd],
             outputs=[lora1_dd, lora2_dd])
+        setup_save_btn.click(
+            fn=_save_setup,
+            inputs=[setup_name_box, prompt_box, negative_box,
+                    steps_box, guidance_box, preset, width_box,
+                    height_box, seed_box, t5_box, offload_box,
+                    batch_box, lora1_dd, lora1_w, lora2_dd,
+                    lora2_w],
+            outputs=[status_box, setup_dd])
+        setup_load_btn.click(
+            fn=_load_setup, inputs=setup_dd,
+            outputs=[prompt_box, negative_box, steps_box,
+                     guidance_box, preset, width_box, height_box,
+                     seed_box, t5_box, offload_box, batch_box,
+                     lora1_dd, lora1_w, lora2_dd, lora2_w,
+                     status_box])
+        setup_delete_btn.click(
+            fn=_delete_setup, inputs=setup_dd,
+            outputs=[status_box, setup_dd])
         random_btn.click(fn=random_prompt, outputs=prompt_box)
         history_dd.change(fn=lambda choice: choice,
                           inputs=history_dd, outputs=prompt_box)
